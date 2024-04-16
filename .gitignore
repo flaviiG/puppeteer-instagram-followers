@@ -3,3 +3,7 @@ config.env
 package-lock.json
 followers_flavian.json
 followers_ioana.json
+testing.js
+.prettierrc
+.eslintrc.json
+data/
