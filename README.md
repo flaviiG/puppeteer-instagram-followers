@@ -2,7 +2,7 @@
 
 ## Create config.env file in the root directory and create these env variables:
 
-### Provide username and password for the Instagram account you want to scrape with
+Provide username and password for the Instagram account you want to scrape with
 
 ```
     INSTAGRAM_USERNAME=%your_username%
@@ -25,7 +25,6 @@ username_to_scrape is the user you want to get the followers list from
     npm i
 
     node index.js %username_to_scrape%
-
 ```
 
 ## Result
