@@ -12,6 +12,7 @@ puppeteer.use(StealthPlugin());
 
 const WAIT_TIME = 1400;
 
+const { PROXY_SERVER } = process.env;
 const { PROXY_USERNAME } = process.env;
 const { PROXY_PASSWORD } = process.env;
 
@@ -20,15 +21,21 @@ const { PROXY_PASSWORD } = process.env;
 const usernameToScrape = process.argv[2];
 
 async function run() {
+  const browserArgs = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-accelerated-2d-canvas',
+    '--disable-gpu',
+  ];
+
+  if (PROXY_SERVER && PROXY_USERNAME && PROXY_PASSWORD) {
+    console.log('Proxy server added');
+    browserArgs.push(`--proxy-server=${PROXY_SERVER}`);
+  }
+
   const browser = await puppeteer.launch({
     headless: false,
-    args: [
-      '--proxy-server=https://ro.smartproxy.com:13007',
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-accelerated-2d-canvas',
-      '--disable-gpu',
-    ],
+    args: browserArgs,
   });
 
   // TODO: Do not load images
