@@ -7,3 +7,4 @@ testing.js
 .prettierrc
 .eslintrc.json
 data/
+followers.json

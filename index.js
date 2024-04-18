@@ -10,20 +10,51 @@ dotenv.config({
 
 puppeteer.use(StealthPlugin());
 
-const WAIT_TIME = 1000;
+const WAIT_TIME = 1400;
 
 const { PROXY_USERNAME } = process.env;
 const { PROXY_PASSWORD } = process.env;
 
 // Another account can be used to scrape the followers
 // as long as it follows the account to be scraped
-const usernameToScrape = 'tbflavian';
+const usernameToScrape = process.argv[2];
 
 async function run() {
   const browser = await puppeteer.launch({
     headless: false,
+    args: [
+      '--proxy-server=https://ro.smartproxy.com:13007',
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-accelerated-2d-canvas',
+      '--disable-gpu',
+    ],
   });
+
+  // TODO: Do not load images
+
   const page = await browser.newPage();
+  await page.setViewport({
+    width: 1024,
+    height: 768,
+    deviceScaleFactor: 1,
+  });
+  // Authenticating the proxy server
+  await page.authenticate({
+    username: PROXY_USERNAME,
+    password: PROXY_PASSWORD,
+  });
+
+  await page.setRequestInterception(true);
+
+  page.on('request', (req) => {
+    if (req.resourceType() === 'image') {
+      req.abort();
+    } else {
+      req.continue();
+    }
+  });
+
   await page.goto('https://www.instagram.com/');
 
   // Decline cookies
@@ -45,6 +76,9 @@ async function run() {
     setTimeout(r, WAIT_TIME);
   });
   await loginButton.click();
+  await new Promise((r) => {
+    setTimeout(r, WAIT_TIME);
+  });
 
   await page.waitForNavigation();
   console.log('Logged in!');
@@ -53,6 +87,14 @@ async function run() {
   await new Promise((r) => {
     setTimeout(r, WAIT_TIME);
   });
+
+  const source = await page.content({ waitUntil: 'domcontentloaded' });
+
+  // Finding the user id in the source
+  const regex = /"profilePage_([^"]+)"/;
+  const match = source.match(regex);
+  const userToScrapeId = match ? match[1] : 'User ID not found';
+  console.log('User id:', userToScrapeId);
 
   const followersNumSpan = await page.waitForSelector(
     `xpath///a[contains(@href, '/${usernameToScrape}/followers/')]/span/span`,
@@ -65,15 +107,35 @@ async function run() {
   await new Promise((r) => {
     setTimeout(r, WAIT_TIME);
   });
+
+  const followersSet = new Set();
+
+  page.on('response', async (response) => {
+    const url = response.url();
+
+    // Check if the URL matches the one you are interested in
+    if (url.includes(`https://www.instagram.com/api/v1/friendships/${userToScrapeId}`)) {
+      const responseData = await response.json();
+      const followersData = responseData.users;
+      if (followersData) {
+        followersData.forEach((follower) => {
+          console.log(follower.username, follower.pk);
+          followersSet.add(JSON.stringify({ username: follower.username, userId: follower.pk }));
+        });
+      }
+    }
+  });
+
+  console.log('Getting followers...');
+
   await followersListButton.click();
 
   await new Promise((r) => {
-    setTimeout(r, WAIT_TIME);
+    setTimeout(r, 3000);
   });
   const followersContainerPath = "xpath///div[@class='_aano']";
 
   // Scrolling to the bottom, in order to have all usernames in the DOM
-  console.log('Getting followers list...');
   for (let i = 1; i <= Math.ceil(Number(followersNum) / 5); i += 1) {
     await page.waitForSelector(followersContainerPath);
     await page.locator(followersContainerPath).scroll({
@@ -81,58 +143,14 @@ async function run() {
     });
 
     await new Promise((r) => {
-      setTimeout(r, 600);
+      setTimeout(r, 1200);
     });
-  }
-
-  // Getting usernames
-  const usernameList = [];
-  for (let i = 1; i <= Number(followersNum); i += 1) {
-    // Getting the username
-    try {
-      const follower = await page.waitForSelector(
-        `${followersContainerPath}/div[1]/div/div[${i}]/div/div/div/div[2]/div/div/div/div/div/a`,
-      );
-      const href = await follower.evaluate((el) => el.href);
-      const username = href.split('/')[3];
-      usernameList.push(username);
-    } catch (err) {
-      console.log('End of username list');
-      break;
-    }
   }
 
   await browser.close();
 
-  // Open another browser, so that the user is not logged in, with a proxy to bypass rate limit
-  const browser2 = await puppeteer.launch({
-    headless: false,
-    args: ['--proxy-server=https://gate.smartproxy.com:7000'],
-  });
-  const idPage = await browser2.newPage();
-
-  // Authenticating the proxy server
-  await idPage.authenticate({ username: PROXY_USERNAME, password: PROXY_PASSWORD });
-
-  // Getting user ids
-  const followersList = [];
-  for (let i = 0; i < usernameList.length; i += 1) {
-    const username = usernameList[i];
-    const url = `https://www.instagram.com/${username}`;
-    await idPage.goto(url, { waitUntil: 'domcontentloaded' });
-    const source = await idPage.content({ waitUntil: 'domcontentloaded' });
-
-    // Finding the user id in the source
-    const regex = /"profilePage_([^"]+)"/;
-    const match = source.match(regex);
-    const userId = match ? match[1] : 'User ID not found';
-
-    followersList.push({ username, userId });
-  }
-
-  await browser2.close();
-
   // Writing to file
+  const followersList = Array.from(followersSet).map((user) => JSON.parse(user));
   const jsonString = JSON.stringify(followersList, null, 2);
 
   fs.writeFile('./followers.json', jsonString, (err) => {
